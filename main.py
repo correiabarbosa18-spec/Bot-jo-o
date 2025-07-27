@@ -3,65 +3,37 @@ from discord.ext import tasks, commands
 import requests
 from bs4 import BeautifulSoup
 import os
-import re
 
+# Token e canal
 TOKEN = os.environ["TOKEN"]
-CHANNEL_ID = 1398565271148560416  # ID do canal no Discord
+CHANNEL_ID = 1398565271148560416
 
+# Intents e bot
 intents = discord.Intents.default()
 intents.message_content = True
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-itens_base_en = [
-    "Cacao", "Burning Bud", "Giant Pinecone", "Sugar Apple", "Ember Lily",
-    "Bean Stalk", "Peppers", "Grape", "Mushroom", "Dragon Fruit",
-    "Cactus", "Elder Strawberry"
+# Itens monitorados
+itens_desejados = [
+    "Burning Bud", "Giant Pinecone", "Sugar Apple", "Ember Lily",
+    "Bean Stalk", "Cacao", "Peppers", "Grape", "Mushroom",
+    "Dragon Fruit", "Cactus", "Rare Summer Egg", "Mythical Egg",
+    "Paradise Egg", "Bug Egg"
 ]
 
-itens_base_pt = [
-    "Cacau", "Botão Flamejante", "Pinheiro Gigante", "Fruta-doce",
-    "Lírio Braseado", "Pé de Feijão", "Pimentas", "Uva", "Cogumelo",
-    "Fruta do Dragão", "Cacto", "Morango Ancião"
+# Itens raros
+itens_raros = [
+    "Burning Bud", "Mythical Egg", "Paradise Egg", "Rare Summer Egg"
 ]
-
-eggs_base_en = [
-    "Rare Summer Egg", "Mythical Egg", "Paradise Egg", "Bug Egg"
-]
-
-eggs_base_pt = [
-    "Ovo de Verão Raro", "Ovo Mítico", "Ovo do Paraíso", "Ovo de Inseto"
-]
-
-pt_to_en = {
-    "Cacau": "Cacao", "Botão Flamejante": "Burning Bud", "Pinheiro Gigante": "Giant Pinecone",
-    "Fruta-doce": "Sugar Apple", "Lírio Braseado": "Ember Lily", "Pé de Feijão": "Bean Stalk",
-    "Pimentas": "Peppers", "Uva": "Grape", "Cogumelo": "Mushroom", "Fruta do Dragão": "Dragon Fruit",
-    "Cacto": "Cactus", "Morango Ancião": "Elder Strawberry", "Ovo de Verão Raro": "Rare Summer Egg",
-    "Ovo Mítico": "Mythical Egg", "Ovo do Paraíso": "Paradise Egg", "Ovo de Inseto": "Bug Egg"
-}
-
-itens_desejados = []
-for item in itens_base_en:
-    itens_desejados.append(item)
-    itens_desejados.append(f"{item} Seed")
-itens_desejados.extend(itens_base_pt)
-for egg in eggs_base_en:
-    itens_desejados.append(egg)
-    itens_desejados.append(f"{egg} Egg")
-itens_desejados.extend(eggs_base_pt)
-itens_desejados = list(set(itens_desejados))
 
 def verificar_estoque():
     url = "https://rellseas.gg/grow-a-garden/stocks/"
     response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
 
-    pagina = soup.text.lower()
     resultados = []
     for item in itens_desejados:
-        base = re.escape(item.lower().replace(" seed", "").replace(" egg", ""))
-        pattern = rf"\b{base}( seed(s)?| seedling| egg(s)?)?\b"
-        if re.search(pattern, pagina):
+        if item.lower() in soup.text.lower():
             resultados.append(item)
     return resultados
 
@@ -74,42 +46,77 @@ async def on_ready():
 async def checar_loja():
     canal = bot.get_channel(CHANNEL_ID)
     itens_achados = verificar_estoque()
-    if itens_achados:
-        mensagem = "🌱 Items found in the store!\n"
-        for item in itens_achados:
-            nome_en = pt_to_en.get(item, item)
-            mensagem += f"🔔 {nome_en}\n"
+
+    itens_alertar = [item for item in itens_achados if item in itens_raros]
+
+    if itens_alertar:
+        mensagem = "🌱 **Itens RAROS encontrados na loja!**\n"
+        mensagem += "\n".join(f"🔔 {item}" for item in itens_alertar)
     else:
-        mensagem = "🔕 No interesting items in the store right now."
+        mensagem = "🔕 Nenhum item interessante na loja no momento."
+
     await canal.send(mensagem)
 
+# Comandos do bot
 @bot.command()
 async def teste(ctx):
-    await ctx.send("✅ Bot está funcionando normalmente!")
+    await ctx.reply("✅ Bot está funcionando normalmente!")
+
+@bot.command()
+async def resetar(ctx):
+    checar_loja.cancel()
+    itens_achados = verificar_estoque()
+    itens_alertar = [item for item in itens_achados if item in itens_raros]
+
+    if itens_alertar:
+        mensagem = "🌱 **Itens RAROS encontrados na loja!**\n"
+        mensagem += "\n".join(f"🔔 {item}" for item in itens_alertar)
+    else:
+        mensagem = "🚫 Nenhum item interessante na loja no momento."
+
+    await ctx.reply(f"♻️ Contador reiniciado!\n{mensagem}")
+    checar_loja.start()
 
 @bot.command()
 async def itens(ctx):
-    lista = "\n".join(f"• {item}" for item in sorted(itens_desejados))
-    await ctx.send(f"📋 **Currently monitored items:**\n{lista}")
+    if not itens_desejados:
+        await ctx.reply("📦 Nenhum item está sendo monitorado.")
+    else:
+        lista = "\n".join(f"• {item}" for item in itens_desejados)
+        await ctx.reply(f"📋 Itens monitorados atualmente:\n{lista}")
+
+@bot.command()
+async def adicionar(ctx, *, item):
+    item_formatado = item.strip().title()
+    if item_formatado in itens_desejados:
+        await ctx.reply(f"⚠️ O item **{item_formatado}** já está na lista.")
+    else:
+        itens_desejados.append(item_formatado)
+        await ctx.reply(f"✅ Item **{item_formatado}** adicionado à lista!")
+
+@bot.command()
+async def remover(ctx, *, item):
+    item_formatado = item.strip().title()
+    if item_formatado in itens_desejados:
+        itens_desejados.remove(item_formatado)
+        await ctx.reply(f"🗑️ Item **{item_formatado}** removido.")
+    else:
+        await ctx.reply(f"❌ O item **{item_formatado}** não está na lista.")
 
 @bot.command()
 async def menu(ctx):
     embed = discord.Embed(
-        title="🤖 Command Menu - Grow a Garden Bot",
-        description="Available commands:",
-        color=0x3498db
+        title="📘 Menu de Comandos",
+        description="Aqui estão os comandos disponíveis:",
+        color=0x00ff00
     )
-    embed.add_field(name="!itens", value="📋 Show monitored items list.", inline=False)
-    embed.add_field(name="!teste", value="✅ Test if the bot is working.", inline=False)
-    embed.add_field(name="!menu", value="📖 Show this menu.", inline=False)
-    embed.add_field(name="!reiniciar", value="🔄 Restart the stock checking loop.", inline=False)
-    await ctx.send(embed=embed)
+    embed.add_field(name="!teste", value="Verifica se o bot está online", inline=False)
+    embed.add_field(name="!resetar", value="Reinicia a verificação da loja", inline=False)
+    embed.add_field(name="!itens", value="Lista os itens monitorados", inline=False)
+    embed.add_field(name="!adicionar [item]", value="Adiciona um item à lista", inline=False)
+    embed.add_field(name="!remover [item]", value="Remove um item da lista", inline=False)
+    embed.add_field(name="!menu", value="Mostra este menu de comandos", inline=False)
+    await ctx.reply(embed=embed)
 
-@bot.command()
-async def reiniciar(ctx):
-    await ctx.send("🔄 Reiniciando o monitoramento da loja...")
-    checar_loja.cancel()  # Para o loop
-    checar_loja.start()   # Reinicia o loop imediatamente
-    await ctx.send("✅ Loop reiniciado com sucesso! Vou checar agora.")
-
+# Rodar bot
 bot.run(TOKEN)
