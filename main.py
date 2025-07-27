@@ -102,6 +102,14 @@ async def menu(ctx):
     embed.add_field(name="!itens", value="📋 Show monitored items list.", inline=False)
     embed.add_field(name="!teste", value="✅ Test if the bot is working.", inline=False)
     embed.add_field(name="!menu", value="📖 Show this menu.", inline=False)
+    embed.add_field(name="!reiniciar", value="🔄 Restart the stock checking loop.", inline=False)
     await ctx.send(embed=embed)
+
+@bot.command()
+async def reiniciar(ctx):
+    await ctx.send("🔄 Reiniciando o monitoramento da loja...")
+    checar_loja.cancel()  # Para o loop
+    checar_loja.start()   # Reinicia o loop imediatamente
+    await ctx.send("✅ Loop reiniciado com sucesso! Vou checar agora.")
 
 bot.run(TOKEN)
